@@ -1,0 +1,12 @@
+[package]
+authors = ["Henrik Södergren <henrik.sodergren@outlook.com>"]
+edition = "2018"
+name = "unpackrars"
+version = "0.1.0"
+[dependencies]
+env_logger = "*"
+log = "*"
+walkdir = "*"
+regex = "*"
+lazy_static = "*"
+structopt = "*"
