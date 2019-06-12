@@ -10,7 +10,7 @@ use walkdir::{DirEntry, WalkDir};
 #[derive(StructOpt)]
 struct Opt {
     #[structopt(short = "p", long = "path")]
-    path: Option<String>,
+    path: String,
 
     #[structopt(short = "r", long = "remove")]
     remove: bool,
@@ -22,25 +22,19 @@ fn main() {
     handle_output(receiver, StdoutHandler());
 
     let opt = Opt::from_args();
-    let walker = WalkDir::new(
-        opt.path
-            .or(Some(String::from(
-                "/home/henrik/A.New.Beginning.Final.Cut-HI2U",
-            )))
-            .unwrap(),
-    )
-    .into_iter()
-    // only return unhidden directories
-    .filter_entry(|e| !is_hidden(e) && is_dir(e))
-    // get the rarfiles, if any
-    .filter_map(|entry| {
-        entry.ok().and_then(|e| {
-            Some((
-                e.path().to_path_buf(),
-                RarFiles::new(e.path().to_path_buf(), sender.clone()),
-            ))
-        })
-    });
+    let walker = WalkDir::new(opt.path)
+        .into_iter()
+        // only return unhidden directories
+        .filter_entry(|e| !is_hidden(e) && is_dir(e))
+        // get the rarfiles, if any
+        .filter_map(|entry| {
+            entry.ok().and_then(|e| {
+                Some((
+                    e.path().to_path_buf(),
+                    RarFiles::new(e.path().to_path_buf(), sender.clone()),
+                ))
+            })
+        });
     for (path, rar_files) in walker {
         let _ = sender.send(Output::Visit(path.clone()));
         if let Some(main) = rar_files.get_main_rar_opt() {
