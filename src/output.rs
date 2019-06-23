@@ -1,6 +1,8 @@
+use self::Output::{Done, New, Progress, Visit};
 use log::*;
 use std::path::PathBuf;
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc;
+use std::sync::mpsc::Sender;
 use std::thread;
 
 pub enum Output {
@@ -14,15 +16,19 @@ pub trait HandleOutput {
     fn handle(&self, o: Output);
 }
 
-pub fn handle_output<T>(receiver: Receiver<Output>, handler: T)
-where
-    T: HandleOutput + Send + Sync + 'static,
-{
+pub struct Data {
+    pub output: Box<HandleOutput + Send>,
+}
+
+pub fn handle_output(handler: Data) -> Sender<Output> {
+    let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
         for output in receiver {
-            handler.handle(output);
+            handler.output.handle(output);
         }
     });
+    sender
+}
 }
 
 pub struct LogHandler();
