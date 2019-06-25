@@ -1,4 +1,5 @@
 use crate::output::Output;
+use crate::output::RealOutput;
 use lazy_static::lazy_static;
 use log::*;
 use regex::Regex;
@@ -17,11 +18,11 @@ lazy_static! {
 pub struct RarFiles {
     main_rar: Option<PathBuf>,
     other_rars: Vec<PathBuf>,
-    sender: Sender<Output>,
+    sender: Sender<RealOutput>,
 }
 
 impl RarFiles {
-    pub fn new(base: PathBuf, sender: Sender<Output>) -> RarFiles {
+    pub fn new(base: PathBuf, sender: Sender<RealOutput>) -> RarFiles {
         let mut main_rar = None;
         let mut other_rars = vec![];
         let entries = read_dir(base).expect("Unable to read dir");
@@ -59,8 +60,14 @@ impl RarFiles {
         self.main_rar.clone()
     }
 
-    pub fn unrar(&self) -> Result<(), std::io::Error> {
-        self.sender.send(Output::New(self.get_main_rar()));
+    pub fn unrar(&self, id: usize) -> Result<(), std::io::Error> {
+        self.sender.send(
+            Output::New {
+                path: self.get_main_rar(),
+                id,
+            }
+            .into(),
+        );
         let mut process = Command::new("unrar")
             .arg("x")
             .arg(self.get_main_rar())
@@ -73,16 +80,20 @@ impl RarFiles {
         for line in reader.lines() {
             let line = line.unwrap();
             if let Some(m) = PERCENT.find(line.as_str()) {
-                self.sender.send(Output::Progress(
-                    line[m.start()..m.end() - 1].parse().unwrap(),
-                ));
+                self.sender.send(
+                    Output::Progress {
+                        procent: line[m.start()..m.end() - 1].parse().unwrap(),
+                        id,
+                    }
+                    .into(),
+                );
             }
         }
 
         let status = process.wait()?;
 
         if status.success() {
-            self.sender.send(Output::Done(self.get_main_rar()));
+            self.sender.send(Output::Done { id }.into());
             Ok(())
         } else {
             Err(std::io::Error::from(std::io::ErrorKind::Other))

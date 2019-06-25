@@ -3,7 +3,8 @@ mod rarfiles;
 use crate::rarfiles::RarFiles;
 use clap::arg_enum;
 use log::*;
-use output::{handle_output, LogHandler, Output, StdoutHandler};
+use output::RealOutput;
+use output::{handle_output, FancyHandler, LogHandler, Output, StdoutHandler};
 use structopt::StructOpt;
 use walkdir::{DirEntry, WalkDir};
 
@@ -19,9 +20,9 @@ arg_enum! {
 impl OutputType {
     fn into_output(&self) -> Box<output::HandleOutput + Send> {
         match self {
-            OutputType::Stdout => Box::new(StdoutHandler()),
+            OutputType::Stdout => Box::new(StdoutHandler::new()),
             OutputType::Log => Box::new(LogHandler::new()),
-            OutputType::Fancy => unimplemented!(),
+            OutputType::Fancy => Box::new(FancyHandler::new()),
         }
     }
 }
@@ -58,7 +59,7 @@ impl Opt {
 
 fn main() {
     let mut opt = Opt::from_args();
-    let sender = handle_output(opt.get_output());
+    let (sender, handle) = handle_output(opt.get_output());
 
     let walker = WalkDir::new(opt.path)
         .into_iter()
@@ -75,10 +76,11 @@ fn main() {
                 None
             }
         });
-    for (path, rar_files) in walker {
-        let _ = sender.send(Output::Visit(path.clone()));
+    for (id, (path, rar_files)) in walker.enumerate() {
+        std::thread::sleep_ms(100);
+        let _ = sender.send(Output::Visit(path.clone()).into());
         if let Some(main) = rar_files.get_main_rar_opt() {
-            match rar_files.unrar() {
+            match rar_files.unrar(id) {
                 Ok(()) => {
                     if opt.remove {
                         match rar_files.remove_rars() {
@@ -91,6 +93,8 @@ fn main() {
             };
         }
     }
+    sender.send(RealOutput::Exit);
+    handle.join();
 }
 
 fn is_hidden(entry: &DirEntry) -> bool {
