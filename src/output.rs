@@ -78,7 +78,7 @@ impl HandleOutput for LogHandler {
                 let path = self.working.remove(&id);
                 info!("done with {:?}", path.unwrap());
             }
-            Progress { id: _, procent } => info!("progress: {}%", procent),
+            Progress { procent, .. } => info!("progress: {}%", procent),
         }
     }
 }
@@ -107,7 +107,7 @@ impl HandleOutput for StdoutHandler {
                 let path = self.working.remove(&id);
                 println!("done with {:?}", path.unwrap());
             }
-            Progress { id: _, procent } => println!("progress: {}%", procent),
+            Progress { procent, .. } => println!("progress: {}%", procent),
         }
     }
 }
@@ -118,6 +118,7 @@ pub struct FancyHandler {
 
 struct Info {
     path: PathBuf,
+    row: usize,
 }
 
 impl FancyHandler {
@@ -127,12 +128,26 @@ impl FancyHandler {
             working: HashMap::new(),
         }
     }
+
+    fn update_visit(&self, path: PathBuf) {
+        self.update(self.working.len() as i32, path.to_str().unwrap());
+    }
+
+    fn update(&self, line: i32, text: &str) {
+        ncurses::mv(line, 0);
+        ncurses::clrtoeol();
+        ncurses::addstr(text);
+    }
 }
 
 impl HandleOutput for FancyHandler {
     fn handle(&mut self, o: Output) {
-        ncurses::clear();
-        ncurses::mvaddstr(0, 0, &format!("{:?}", o));
+        match o {
+            Visit(path) => self.update_visit(path),
+            New { .. } => {}
+            Done { .. } => {}
+            Progress { .. } => {}
+        }
         ncurses::refresh();
     }
 }
@@ -140,6 +155,5 @@ impl HandleOutput for FancyHandler {
 impl Drop for FancyHandler {
     fn drop(&mut self) {
         ncurses::endwin();
-        println!("Fancy handler dropped");
     }
 }
