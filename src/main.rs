@@ -5,6 +5,7 @@ use clap::arg_enum;
 use log::*;
 use output::RealOutput;
 use output::{handle_output, FancyHandler, LogHandler, Output, StdoutHandler};
+use std::path::PathBuf;
 use structopt::StructOpt;
 use walkdir::{DirEntry, WalkDir};
 
@@ -61,13 +62,18 @@ fn main() {
     let mut opt = Opt::from_args();
     let (sender, handle) = handle_output(opt.get_output());
 
+    enum Job {
+        Rar(PathBuf, RarFiles),
+        Done,
+    }
+
     let walker = WalkDir::new(opt.path)
         .into_iter()
         // only return unhidden directories
         .filter_entry(|e| !is_hidden(e) && is_dir(e))
         // get the rarfiles, if any
         .filter_map(|entry| match entry {
-            Ok(e) => Some((
+            Ok(e) => Some(Job::Rar(
                 e.path().to_path_buf(),
                 RarFiles::new(e.path().to_path_buf(), sender.clone()),
             )),
@@ -75,25 +81,33 @@ fn main() {
                 eprintln!("{}", err);
                 None
             }
-        });
-    for (id, (path, rar_files)) in walker.enumerate() {
-        std::thread::sleep_ms(100);
-        let _ = sender.send(Output::Visit(path.clone()).into());
-        if let Some(main) = rar_files.get_main_rar_opt() {
-            match rar_files.unrar(id) {
-                Ok(()) => {
-                    if opt.remove {
-                        match rar_files.remove_rars() {
-                            Ok(()) => {}
-                            Err(e) => error!("while removing {:?}: {}", main, e),
-                        };
-                    }
+        })
+        .chain(std::iter::once(Job::Done));
+    for (id, job) in walker.enumerate() {
+        match job {
+            Job::Rar(path, rar_files) => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                let _ = sender.send(Output::Visit(path.clone()).into());
+                if let Some(main) = rar_files.get_main_rar_opt() {
+                    match rar_files.unrar(id) {
+                        Ok(()) => {
+                            if opt.remove {
+                                match rar_files.remove_rars() {
+                                    Ok(()) => {}
+                                    Err(e) => error!("while removing {:?}: {}", main, e),
+                                };
+                            }
+                        }
+                        Err(e) => error!("while unraring {:?}: {}", main, e),
+                    };
                 }
-                Err(e) => error!("while unraring {:?}: {}", main, e),
-            };
+            }
+            Job::Done => {
+                sender.send(RealOutput::Exit);
+            }
         }
     }
-    sender.send(RealOutput::Exit);
+    // tell the output thread to exit and wait for it to properly die
     handle.join();
 }
 
